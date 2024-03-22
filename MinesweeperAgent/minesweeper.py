@@ -2,7 +2,7 @@ import itertools
 import random
 from copy import deepcopy
 from enum import Enum
-from typing import Iterator, Callable
+from typing import Iterator, Callable, Generator
 
 
 class Minesweeper:
@@ -79,12 +79,22 @@ class Minesweeper:
                 return index
             elif isinstance(index, tuple) and len(index) == 2:
                 try:
-                    return index[0] * self.width + index[1]
+                    return self.cell_from_rc(*index)
                 except TypeError:
                     raise TypeError("Indices must be integers")
             else:
                 raise TypeError(f"Expected int or tuple[int, int],"
                                 f" got {type(index)}")
+
+        def surrounding_cells(self,
+                              row: int,
+                              col: int
+                              ) -> Generator[tuple[int, int], None, None]:
+            r: int
+            for r in range(max(0, row - 1), min(row + 2, self.height)):
+                c: int
+                for c in range(max(0, col - 1), min(col + 2, self.width)):
+                    yield r, c
 
         def __getitem__(self,
                         index: int | tuple[int, int]) -> "Minesweeper.State":
@@ -95,9 +105,17 @@ class Minesweeper:
                         value: "Minesweeper.State") -> None:
             self.board[self._get_board_index(key)] = value
 
-    def __init__(self, height: int, width: int, num_bombs: int):
+    def __init__(self,
+                 height: int,
+                 width: int,
+                 num_bombs: int,
+                 progress_reward: float = 0.3,
+                 random_penalty: float = -0.3):
         self._board: Minesweeper.Board \
             = Minesweeper.Board(height, width, num_bombs)
+
+        self.progress_reward: float = progress_reward
+        self.random_penalty: float = random_penalty
 
         self.first_reveal: bool = True
 
@@ -161,10 +179,9 @@ class Minesweeper:
         surrounding_bombs: int = 0
 
         r: int
-        for r in range(row - 1, row + 2):
-            c: int
-            for c in range(col - 1, col + 2):
-                surrounding_bombs += 1 if self._is_bomb(r, c) else 0
+        c:int
+        for r, c in self._board.surrounding_cells(row, col):
+            surrounding_bombs += 1 if self._is_bomb(r, c) else 0
 
         return surrounding_bombs
 
@@ -172,11 +189,24 @@ class Minesweeper:
         num_unrevealed: int = self._board.count(Minesweeper.State.UNREVEALED)
         return num_unrevealed == 0
 
+    def _get_reward(self, row: int, col: int) -> float:
+        r: int
+        c: int
+        for r, c in self._board.surrounding_cells(row, col):
+            state: Minesweeper.State = self._board[r, c]
+            if (state != Minesweeper.State.UNREVEALED
+                    and state != Minesweeper.State.BOMB):
+                return self.progress_reward
+
+        return self.random_penalty
+
     def reveal_cell(self,
                     row: int,
                     col: int
-                    ) -> dict[tuple[int, int], "Minesweeper.State"] | None:
-
+                    ) -> tuple[
+        float,
+        dict[tuple[int, int], "Minesweeper.State"] | None
+    ]:
         if self.first_reveal:
             self.first_reveal = False
 
@@ -185,18 +215,20 @@ class Minesweeper:
 
         if self._is_bomb(row, col):
             self._game_state = -1
-            return None
+            return -1, None
         elif self._board[row, col] != Minesweeper.State.UNREVEALED:
-            return {}
+            return 0, {}
         else:
+            reward: float = self._get_reward(row, col)
+
             self._board[row, col] \
                 = Minesweeper.State(self._count_surrounding_bombs(row, col))
 
             if self._is_winner():
                 self._game_state = 1
-                return None
+                return 1, None
             elif self._board[row, col] != Minesweeper.State.ZERO:
-                return {(row, col): self._board[row, col]}
+                return reward, {(row, col): self._board[row, col]}
 
             updated: dict[tuple[int, int], Minesweeper.State] \
                 = {(row, col): self._board[row, col]}
@@ -206,15 +238,16 @@ class Minesweeper:
                 c: int
                 for c in range(col - 1, col + 2):
                     if self._board.is_cell_inbounds_rc(r, c):
-                        rc_updated: dict[tuple[int, int], Minesweeper.State] \
-                            = self.reveal_cell(r, c)
+                        other_reward: float
+                        rc_updated: dict[tuple[int, int], Minesweeper.State]
+                        other_reward, rc_updated = self.reveal_cell(r, c)
 
                         if rc_updated is None:
-                            return None
+                            return other_reward, None
                         else:
                             updated.update(rc_updated)
 
-            return updated
+            return reward, updated
 
     def is_running(self) -> bool:
         return not self._game_state
