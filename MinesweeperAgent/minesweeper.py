@@ -105,6 +105,72 @@ class Minesweeper:
                         value: "Minesweeper.State") -> None:
             self.board[self._get_board_index(key)] = value
 
+        def as_formatted_str(self,
+                             horizontal_spacing: int = 12,
+                             bomb_repr: Callable[[int, int], str]
+                             = lambda _1, _2: "BOMB",
+                             unrevealed_repr: Callable[[int, int], str]
+                             = lambda _1, _2: "UNREVEALED",
+                             other_repr: Callable[
+                                 [int, int, "Minesweeper.State"],
+                                 str
+                             ] = lambda _1, _2, val: str(val)
+                             ) -> str:
+            """
+            Gets a string representation of the object.
+
+            :param horizontal_spacing: the amount of space given for each cell.
+            :param bomb_repr: gets the representation for the bomb.
+            :param unrevealed_repr: gets the representation for an unrevealed
+                cell.
+            :param other_repr: gets the representation for other cells.
+            :return: a string representation of the object.
+            """
+            output_format: str = "{:>" + str(horizontal_spacing) + "}"
+
+            state_iterator: Iterator[Minesweeper.State] = iter(self.board)
+
+            row: int
+            column: int
+            value: Minesweeper.State
+            output_str: str = '\n'.join(
+                ''.join(
+                    output_format.format(
+                        bomb_repr(row,
+                                  column) if value == Minesweeper.State.BOMB
+                        else unrevealed_repr(row, column)
+                        if value == Minesweeper.State.UNREVEALED
+                        else other_repr(row, column, value)
+                    ) for column, value in
+                    enumerate(itertools.islice(state_iterator, self.width))
+                ) for row in range(self.height)
+            )
+
+            return output_str
+
+        def __str__(self):
+            return self.as_formatted_str()
+
+        def copy(self, obfuscate_bombs: bool = True) -> "Minesweeper.Board":
+            ms_copy: Minesweeper.Board = deepcopy(self)
+
+            if obfuscate_bombs:
+                index: int
+                value: Minesweeper.State
+                for index, value in enumerate(ms_copy.board):
+                    if value == Minesweeper.State.BOMB:
+                        ms_copy.board[index] = Minesweeper.State.UNREVEALED
+
+            return ms_copy
+
+        def __deepcopy__(self, memo):
+            cls = self.__class__
+            result: Minesweeper.Board = cls.__new__(cls)
+            memo[id(self)] = result
+            for k, v in self.__dict__.items():
+                setattr(result, k, deepcopy(v, memo))
+            return result
+
     def __init__(self,
                  height: int,
                  width: int,
@@ -249,6 +315,9 @@ class Minesweeper:
 
             return reward, updated
 
+    def get_board(self) -> "Minesweeper.Board":
+        return self._board.copy()
+
     def is_running(self) -> bool:
         return not self._game_state
 
@@ -258,12 +327,6 @@ class Minesweeper:
     def has_won(self) -> bool:
         return self._game_state == 1
 
-    def __copy__(self):
-        cls = self.__class__
-        result = cls.__new__(cls)
-        result.__dict__.update(self.__dict__)
-        return result
-
     def __deepcopy__(self, memo):
         cls = self.__class__
         result: Minesweeper = cls.__new__(cls)
@@ -272,45 +335,6 @@ class Minesweeper:
             setattr(result, k, deepcopy(v, memo))
         return result
 
-    def as_formatted_str(self,
-                         horizontal_spacing: int = 12,
-                         bomb_repr: Callable[[int, int], str]
-                            = lambda _1, _2: "BOMB",
-                         unrevealed_repr: Callable[[int, int], str]
-                            = lambda _1, _2: "UNREVEALED",
-                         other_repr: Callable[[int, int, State], str]
-                            = lambda _1, _2, val: str(val)
-                         ) -> str:
-        """
-        Gets a string representation of the object.
-
-        :param horizontal_spacing: the amount of space given for each cell.
-        :param bomb_repr: gets the representation for the bomb.
-        :param unrevealed_repr: gets the representation for an unrevealed cell.
-        :param other_repr: gets the representation for other cells.
-        :return: a string representation of the object.
-        """
-        output_format: str = "{:>" + str(horizontal_spacing) + "}"
-
-        state_iterator: Iterator[Minesweeper.State] = iter(self._board)
-
-        row: int
-        column: int
-        value: Minesweeper.State
-        output_str: str = '\n'.join(
-            ''.join(
-                output_format.format(
-                    bomb_repr(row, column) if value == Minesweeper.State.BOMB
-                    else unrevealed_repr(row, column)
-                    if value == Minesweeper.State.UNREVEALED
-                    else other_repr(row, column, value)
-                ) for column, value in
-                enumerate(itertools.islice(state_iterator, self.width))
-            ) for row in range(self.height)
-        )
-
-        return output_str
-
     def __str__(self):
         """
         Pretty print the state values.
@@ -318,7 +342,7 @@ class Minesweeper:
         :return: string version of state values.
         """
 
-        return self.as_formatted_str()
+        return str(self._board)
 
 
 if __name__ == '__main__':
@@ -326,12 +350,13 @@ if __name__ == '__main__':
     ms: Minesweeper = Minesweeper(5, 5, 10)
 
     print(ms)
+    print(ms.get_board())
 
     terminated: bool = False
     while not terminated:
         move = (int(s) for s in input("Enter a cell to reveal: ").split())
-        update: dict[tuple[int, int], Minesweeper.State] | None \
-            = ms.reveal_cell(*move)
+        update: dict[tuple[int, int], Minesweeper.State] | None
+        _, update = ms.reveal_cell(*move)
 
         if update is None:
             if ms.has_lost():
