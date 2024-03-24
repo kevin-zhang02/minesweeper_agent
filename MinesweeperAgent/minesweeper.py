@@ -169,6 +169,12 @@ class Minesweeper:
                 setattr(result, k, deepcopy(v, memo))
             return result
 
+    default_difficulties: dict[str, tuple[int, int, int]] = {
+        "easy": (9, 9, 10),
+        "normal": (16, 16, 40),
+        "hard": (16, 30, 99)
+    }
+
     def __init__(self,
                  height: int,
                  width: int,

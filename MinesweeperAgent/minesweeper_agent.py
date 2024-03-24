@@ -322,8 +322,14 @@ def off_policy_control(ms: Minesweeper,
 
 
 def main():
-    random.seed(2)
-    ms: Minesweeper = Minesweeper(9, 9, 10)
+    response: str = input("Enter seed, or leave blank for random: ")
+
+    if response:
+        random.seed(int(response))
+
+    difficulty = input("Enter difficulty level (easy/normal/hard): ")
+    ms: Minesweeper \
+        = Minesweeper(*Minesweeper.default_difficulties[difficulty])
 
     # print(ms)
 
@@ -333,7 +339,7 @@ def main():
 
     while load_policy is None:
         response: str \
-            = (input("Do you want to load a policy from file(y/n): ")
+            = (input("Do you want to load a policy from file (y/n): ")
                .strip()
                .lower())
 
@@ -367,7 +373,7 @@ def main():
     write_to_file: bool | None = None
     while write_to_file is None:
         response: str \
-            = (input("Do you want to write your policy to file(y/n): ")
+            = (input("Do you want to write your policy to file (y/n): ")
                .strip()
                .lower())
 
