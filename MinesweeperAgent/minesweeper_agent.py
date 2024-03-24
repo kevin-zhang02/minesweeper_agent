@@ -8,7 +8,7 @@ from minesweeper import Minesweeper
 Action = tuple[int, int]
 
 
-class State:
+class AgentState:
     @staticmethod
     def _hash(board: Minesweeper.Board) -> int:
         hash_val: int = 0
@@ -36,11 +36,11 @@ class State:
             minesweeper_state: Minesweeper.State
             i: int
             self.states: tuple[tuple[int, ...], ...] = tuple(
-                State.cell_repr[minesweeper_state.value]
+                AgentState.cell_repr[minesweeper_state.value]
                 for minesweeper_state in board
             )
 
-            self._hash_val: int = State._hash(board)
+            self._hash_val: int = AgentState._hash(board)
         elif isinstance(board, dict):
             try:
                 self.height: int = board["height"]
@@ -52,8 +52,8 @@ class State:
 
                 state: str
                 self.states: tuple[tuple[int, ...], ...] = (
-                    *(State.cell_repr[0] for _ in range(leading_zeroes)),
-                    *(State.cell_repr[int(i)] for i in hash_val_str)
+                    *(AgentState.cell_repr[0] for _ in range(leading_zeroes)),
+                    *(AgentState.cell_repr[int(i)] for i in hash_val_str)
                 )
 
                 self._hash_val: int = board["hash_val"]
@@ -110,13 +110,14 @@ class State:
         return self._hash_val
 
     def __eq__(self, other: object) -> bool:
-        return isinstance(other, State) and self._hash_val == other._hash_val
+        return (isinstance(other, AgentState)
+                and self._hash_val == other._hash_val)
 
     def __str__(self) -> str:
         return str(self._hash_val)
 
 
-class Policy(dict[State, Action]):
+class Policy(dict[AgentState, Action]):
     @staticmethod
     def from_file(file: TextIO) -> "Policy":
         json_obj: list[list[dict[str, int] | Action]] = json.load(file)
@@ -125,7 +126,7 @@ class Policy(dict[State, Action]):
 
         board_action_pair: list[dict[str, int] | Action]
         for board_action_pair in json_obj:
-            state: State = State(board_action_pair[0])
+            state: AgentState = AgentState(board_action_pair[0])
 
             policy[state] = board_action_pair[1]
 
@@ -141,7 +142,7 @@ class Policy(dict[State, Action]):
         self.found_count = self.guess_count = 0
 
     def as_json(self) -> list[tuple[dict[str, int], Action]]:
-        state: State
+        state: AgentState
         action: Action
         return [
             (state.as_dict(), action) for state, action in self.items()
@@ -150,7 +151,7 @@ class Policy(dict[State, Action]):
     def to_file(self, file: TextIO) -> None:
         json.dump(self.as_json(), file)
 
-    def __getitem__(self, state: State) -> Action:
+    def __getitem__(self, state: AgentState) -> Action:
         action: Action | None = super().get(state, None)
 
         if action is None:
@@ -163,14 +164,14 @@ class Policy(dict[State, Action]):
 
 
 def generate_episode(ms: Minesweeper,
-                     policy: dict[State, Action],
+                     policy: dict[AgentState, Action],
                      epsilon: float
-                     ) -> list[tuple[State, Action, float, float]]:
-    episode: list[tuple[State, Action, float, float]] = []
+                     ) -> list[tuple[AgentState, Action, float, float]]:
+    episode: list[tuple[AgentState, Action, float, float]] = []
     unrevealed_cells: list[tuple[int, int]] = ms.get_unrevealed_cells()
 
     while True:
-        state: State = State(ms.get_board())
+        state: AgentState = AgentState(ms.get_board())
         rand_val: float = random.random()
 
         action: Action
@@ -207,8 +208,8 @@ def generate_episode(ms: Minesweeper,
     return episode
 
 
-def get_best_action(state: State,
-                    values: dict[tuple[State, Action], float],
+def get_best_action(state: AgentState,
+                    values: dict[tuple[AgentState, Action], float],
                     actions: Sequence[Action]) -> Action:
     best_action: Action = actions[0]
     best_action_value: float = values.get((state, best_action), 0)
@@ -225,7 +226,7 @@ def get_best_action(state: State,
 
 
 def run_policy(ms: Minesweeper, policy: Policy) -> bool:
-    state: State = State(ms.get_board())
+    state: AgentState = AgentState(ms.get_board())
 
     updated: set[tuple[int, int]] = set()
     while updated is not None:
@@ -235,7 +236,7 @@ def run_policy(ms: Minesweeper, policy: Policy) -> bool:
         if updated is None:
             return ms.has_won()
 
-        state = State(ms.get_board())
+        state = AgentState(ms.get_board())
 
 
 def evaluate_policy(ms: Minesweeper,
@@ -261,8 +262,8 @@ def off_policy_control(ms: Minesweeper,
                        discount_factor: float,
                        epsilon: float) -> Policy:
     # Initialize
-    values: dict[tuple[State, Action], float] = {}
-    cumulative_weights: dict[tuple[State, Action], float] = {}
+    values: dict[tuple[AgentState, Action], float] = {}
+    cumulative_weights: dict[tuple[AgentState, Action], float] = {}
 
     policy: Policy = Policy()
 
@@ -279,15 +280,15 @@ def off_policy_control(ms: Minesweeper,
             else:
                 evaluation_interval = min(1024, evaluation_interval * 2)
 
-        # (State, Action, Reward, 1 / b(Action | State))
-        episode: list[tuple[State, Action, float, float]] \
+        # (AgentState, Action, Reward, 1 / b(Action | AgentState))
+        episode: list[tuple[AgentState, Action, float, float]] \
             = generate_episode(ms.copy(), policy, epsilon)
 
         return_val: float = 0
         weight: float = 1
 
         index: int
-        state: State
+        state: AgentState
         action: Action
         next_reward: float
         action_probability_reciprocal: float
@@ -296,7 +297,7 @@ def off_policy_control(ms: Minesweeper,
                 in enumerate(reversed(episode)):
             return_val = return_val * discount_factor + next_reward
 
-            state_action_pair: tuple[State, Action] = state, action
+            state_action_pair: tuple[AgentState, Action] = state, action
 
             cumulative_weights[state_action_pair] \
                 = cumulative_weights.get(state_action_pair, 0) + weight
