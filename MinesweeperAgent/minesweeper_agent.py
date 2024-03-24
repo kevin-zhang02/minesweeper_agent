@@ -225,36 +225,52 @@ def get_best_action(state: AgentState,
     return best_action
 
 
-def run_policy(ms: Minesweeper, policy: Policy) -> bool:
+def run_policy(ms: Minesweeper, policy: Policy) -> tuple[bool, float]:
     state: AgentState = AgentState(ms.get_board())
+    total_reward: float = 0
 
-    updated: set[tuple[int, int]] = set()
-    while updated is not None:
+    while True:
         action: Action = policy[state]
-        _, updated = ms.reveal_cell(*action)
+
+        new_reward: float
+        updated: set[tuple[int, int]]
+        new_reward, updated = ms.reveal_cell(*action)
+
+        total_reward += new_reward
 
         if updated is None:
-            return ms.has_won()
+            return ms.has_won(), total_reward
 
         state = AgentState(ms.get_board())
 
 
-def evaluate_policy(ms: Minesweeper,
+def policy_succeeds(ms: Minesweeper,
                     policy: Policy,
-                    evaluate_count: int = 30) -> float:
-    success_count: int = 0
+                    num_runs: int = 30) -> tuple[bool, float]:
+    assert num_runs > 0
 
-    for _ in range(evaluate_count):
+    policy.reset_count()
+
+    ms_copy: Minesweeper = ms.copy()
+
+    has_won: bool
+    total_reward: float
+    has_won, total_reward = run_policy(ms_copy, policy)
+
+    # Policy fully deterministic when following policy at start state
+    if not policy.guess_count:
+        return has_won, total_reward
+
+    for _ in range(num_runs - 1):
         policy.reset_count()
 
         ms_copy: Minesweeper = ms.copy()
-        success_count += 1 if run_policy(ms_copy, policy) else 0
+        next_reward: float
+        _, next_reward = run_policy(ms_copy, policy)
 
-        # Policy fully deterministic when following policy at start state
-        if not policy.guess_count:
-            return 1 if ms_copy.has_won() else 0
+        total_reward += next_reward
 
-    return success_count / evaluate_count
+    return False, total_reward / num_runs
 
 
 def off_policy_control(ms: Minesweeper,
@@ -268,17 +284,31 @@ def off_policy_control(ms: Minesweeper,
     policy: Policy = Policy()
 
     evaluation_interval: int = 4
+    prev_avg_reward: float | None = None
+    stop_delta_threshold: float \
+        = min(abs(ms.progress_reward), abs(ms.random_penalty))
 
     epoch: int
-    for epoch in range(maximum_episode_count):
+    for epoch in range(1, maximum_episode_count + 1):
         if not epoch % evaluation_interval:
-            success_rate: float = evaluate_policy(ms, policy)
             print(f"Epoch {epoch}")
 
-            if success_rate == 1:
+            has_won: bool
+            average_rewards: float
+            has_won, average_rewards = policy_succeeds(ms, policy)
+
+            if prev_avg_reward is not None:
+                print(f"{prev_avg_reward=:.2f}", f"{average_rewards=:.2f}")
+
+            if (prev_avg_reward is not None
+                    and has_won
+                    and abs(average_rewards - prev_avg_reward)
+                        < stop_delta_threshold):
                 return policy
             else:
                 evaluation_interval = min(1024, evaluation_interval * 2)
+
+            prev_avg_reward = average_rewards
 
         # (AgentState, Action, Reward, 1 / b(Action | AgentState))
         episode: list[tuple[AgentState, Action, float, float]] \
@@ -322,12 +352,25 @@ def off_policy_control(ms: Minesweeper,
 
 
 def main():
-    response: str = input("Enter seed, or leave blank for random: ")
+    response: str | None = None
+    while response is None:
+        try:
+            response = input("Enter seed, or leave blank for random: ")
 
-    if response:
-        random.seed(int(response))
+            if response:
+                random.seed(int(response))
+        except ValueError:
+            print("Invalid seed.")
+            response = None
 
-    difficulty = input("Enter difficulty level (easy/normal/hard): ")
+    difficulty: str | None = None
+    while difficulty is None:
+        difficulty = input("Enter difficulty level (easy/normal/hard): ")
+
+        if difficulty not in Minesweeper.default_difficulties:
+            difficulty = None
+            print("Invalid difficulty level.")
+
     ms: Minesweeper \
         = Minesweeper(*Minesweeper.default_difficulties[difficulty])
 
@@ -349,11 +392,18 @@ def main():
             load_policy = False
 
     if load_policy:
-        filename: str = input("Enter the name of the file: ")
+        filename: str | None = None
 
-        file: TextIO
-        with open(filename, "r") as file:
-            policy = Policy.from_file(file)
+        while filename is None:
+            try:
+                filename = input("Enter the name of the file: ")
+
+                file: TextIO
+                with open(filename, "r") as file:
+                    policy = Policy.from_file(file)
+            except FileNotFoundError:
+                print("File cannot be found.")
+                filename = None
     else:
         policy = off_policy_control(
             ms.copy(),
@@ -364,8 +414,11 @@ def main():
 
     policy.reset_count()
 
-    has_won: bool = run_policy(ms, policy)
-    print("You won!" if has_won else "You lost!")
+    has_won: bool
+    total_reward: float
+    has_won, total_reward = run_policy(ms, policy)
+    print(f"You won! {total_reward=:.2f}" if has_won
+          else f"You lost!{total_reward=:.2f}")
 
     print(f"State found in policy {policy.found_count} time(s).")
     print(f"Random guess made {policy.guess_count} time(s).")
@@ -381,6 +434,8 @@ def main():
             write_to_file = True
         elif response == "n":
             write_to_file = False
+        else:
+            print("Invalid response. Please try again.")
 
     if write_to_file:
         filename: str = input("Enter the name of the file: ")
