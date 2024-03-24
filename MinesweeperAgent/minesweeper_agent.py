@@ -250,7 +250,7 @@ def evaluate_policy(ms: Minesweeper,
         ms_copy: Minesweeper = ms.copy()
         success_count += 1 if run_policy(ms_copy, policy) else 0
 
-        # Policy fully deterministic
+        # Policy fully deterministic when following policy at start state
         if not policy.guess_count:
             return 1 if ms_copy.has_won() else 0
 
