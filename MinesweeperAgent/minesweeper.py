@@ -356,7 +356,7 @@ class Minesweeper:
 
 if __name__ == '__main__':
     random.seed(2)
-    ms: Minesweeper = Minesweeper(9, 9, 10)
+    ms: Minesweeper = Minesweeper(16, 16, 40)
 
     print(ms)
 
@@ -366,6 +366,8 @@ if __name__ == '__main__':
         update: dict[tuple[int, int], Minesweeper.State] | None
         _, update = ms.reveal_cell(*move)
 
+        print(ms)
+
         if update is None:
             if ms.has_lost():
                 print("You lost!")
@@ -373,5 +375,3 @@ if __name__ == '__main__':
                 print("You won!")
 
             terminated = True
-
-        print(ms)

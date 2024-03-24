@@ -1,5 +1,6 @@
+import json
 import random
-from typing import Sequence
+from typing import Sequence, TextIO
 
 from minesweeper import Minesweeper
 
@@ -26,19 +27,40 @@ class State:
         ) for i in range(10)
     )
 
-    def __init__(self, board: Minesweeper.Board):
-        self.height: int = board.height
-        self.width: int = board.width
+    def __init__(self, board: Minesweeper.Board | dict[str, int]):
+        if isinstance(board, Minesweeper.Board):
+            self.height: int = board.height
+            self.width: int = board.width
 
-        # Bombs in the board are unrevealed, values range from 0-9
-        minesweeper_state: Minesweeper.State
-        i: int
-        self.states: tuple[tuple[int, ...], ...] = tuple(
-            State.cell_repr[minesweeper_state.value]
-            for minesweeper_state in board
-        )
+            # Bombs in the board are unrevealed, values range from 0-9
+            minesweeper_state: Minesweeper.State
+            i: int
+            self.states: tuple[tuple[int, ...], ...] = tuple(
+                State.cell_repr[minesweeper_state.value]
+                for minesweeper_state in board
+            )
 
-        self._hash_val: int = State._hash(board)
+            self._hash_val: int = State._hash(board)
+        elif isinstance(board, dict):
+            try:
+                self.height: int = board["height"]
+                self.width: int = board["width"]
+
+                hash_val_str: str = str(board["hash_val"])
+                leading_zeroes: int \
+                    = self.height * self.width - len(hash_val_str)
+
+                state: str
+                self.states: tuple[tuple[int, ...], ...] = (
+                    *(State.cell_repr[0] for _ in range(leading_zeroes)),
+                    *(State.cell_repr[int(i)] for i in hash_val_str)
+                )
+
+                self._hash_val: int = board["hash_val"]
+            except KeyError:
+                print("Invalid board dict.")
+        else:
+            raise TypeError(f"Expected Board or dict, got {type(board)}")
 
     def get_actions(self) -> list[Action]:
         actions: list[Action] = []
@@ -73,6 +95,13 @@ class State:
             raise TypeError(f"Expected int or tuple[int, int],"
                             f" got {type(index)}")
 
+    def as_dict(self) -> dict[str, int]:
+        return {
+            "height": self.height,
+            "width": self.width,
+            "hash_val": self._hash_val
+        }
+
     def __getitem__(self,
                     index: int | tuple[int, int]) -> tuple[int, ...]:
         return self.states[self._get_state_index(index)]
@@ -88,6 +117,20 @@ class State:
 
 
 class Policy(dict[State, Action]):
+    @staticmethod
+    def from_file(file: TextIO) -> "Policy":
+        json_obj: list[list[dict[str, int] | Action]] = json.load(file)
+
+        policy: Policy = Policy()
+
+        board_action_pair: list[dict[str, int] | Action]
+        for board_action_pair in json_obj:
+            state: State = State(board_action_pair[0])
+
+            policy[state] = board_action_pair[1]
+
+        return policy
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -96,6 +139,16 @@ class Policy(dict[State, Action]):
 
     def reset_count(self) -> None:
         self.found_count = self.guess_count = 0
+
+    def as_json(self) -> list[tuple[dict[str, int], Action]]:
+        state: State
+        action: Action
+        return [
+            (state.as_dict(), action) for state, action in self.items()
+        ]
+
+    def to_file(self, file: TextIO) -> None:
+        json.dump(self.as_json(), file)
 
     def __getitem__(self, state: State) -> Action:
         action: Action | None = super().get(state, None)
@@ -171,8 +224,40 @@ def get_best_action(state: State,
     return best_action
 
 
+def run_policy(ms: Minesweeper, policy: Policy) -> bool:
+    state: State = State(ms.get_board())
+
+    updated: set[tuple[int, int]] = set()
+    while updated is not None:
+        action: Action = policy[state]
+        _, updated = ms.reveal_cell(*action)
+
+        if updated is None:
+            return ms.has_won()
+
+        state = State(ms.get_board())
+
+
+def evaluate_policy(ms: Minesweeper,
+                    policy: Policy,
+                    evaluate_count: int = 30) -> float:
+    success_count: int = 0
+
+    for _ in range(evaluate_count):
+        policy.reset_count()
+
+        ms_copy: Minesweeper = ms.copy()
+        success_count += 1 if run_policy(ms_copy, policy) else 0
+
+        # Policy fully deterministic
+        if not policy.guess_count:
+            return 1 if ms_copy.has_won() else 0
+
+    return success_count / evaluate_count
+
+
 def off_policy_control(ms: Minesweeper,
-                       episode_count: int,
+                       maximum_episode_count: int,
                        discount_factor: float,
                        epsilon: float) -> Policy:
     # Initialize
@@ -181,10 +266,18 @@ def off_policy_control(ms: Minesweeper,
 
     policy: Policy = Policy()
 
+    evaluation_interval: int = 4
+
     epoch: int
-    for epoch in range(episode_count):
-        if not epoch % 1000:
+    for epoch in range(maximum_episode_count):
+        if not epoch % evaluation_interval:
+            success_rate: float = evaluate_policy(ms, policy)
             print(f"Epoch {epoch}")
+
+            if success_rate == 1:
+                return policy
+            else:
+                evaluation_interval = min(1024, evaluation_interval * 2)
 
         # (State, Action, Reward, 1 / b(Action | State))
         episode: list[tuple[State, Action, float, float]] \
@@ -229,38 +322,65 @@ def off_policy_control(ms: Minesweeper,
 
 def main():
     random.seed(2)
-    ms: Minesweeper = Minesweeper(16, 30, 99)
+    ms: Minesweeper = Minesweeper(9, 9, 10)
 
     # print(ms)
 
-    policy: Policy = off_policy_control(
-        ms,
-        episode_count=100_000,
-        discount_factor=0.95,
-        epsilon=0.001
-    )
+    policy: Policy
+
+    load_policy: bool | None = None
+
+    while load_policy is None:
+        response: str \
+            = (input("Do you want to load a policy from file(y/n): ")
+               .strip()
+               .lower())
+
+        if response == "y":
+            load_policy = True
+        elif response == "n":
+            load_policy = False
+
+    if load_policy:
+        filename: str = input("Enter the name of the file: ")
+
+        file: TextIO
+        with open(filename, "r") as file:
+            policy = Policy.from_file(file)
+    else:
+        policy = off_policy_control(
+            ms.copy(),
+            maximum_episode_count=1_000_000,
+            discount_factor=0.95,
+            epsilon=0.001
+        )
+
     policy.reset_count()
 
-    state: State = State(ms.get_board())
-
-    updated: set[tuple[int, int]] = set()
-    while updated is not None:
-        action: Action = policy[state]
-        # print(action)
-        _, updated = ms.reveal_cell(*action)
-
-        # print(ms)
-
-        if updated is None:
-            if ms.has_lost():
-                print("You lost!")
-            else:
-                print("You won!")
-
-        state = State(ms.get_board())
+    has_won: bool = run_policy(ms, policy)
+    print("You won!" if has_won else "You lost!")
 
     print(f"State found in policy {policy.found_count} time(s).")
     print(f"Random guess made {policy.guess_count} time(s).")
+
+    write_to_file: bool | None = None
+    while write_to_file is None:
+        response: str \
+            = (input("Do you want to write your policy to file(y/n): ")
+               .strip()
+               .lower())
+
+        if response == "y":
+            write_to_file = True
+        elif response == "n":
+            write_to_file = False
+
+    if write_to_file:
+        filename: str = input("Enter the name of the file: ")
+
+        file: TextIO
+        with open(filename, "w") as file:
+            policy.to_file(file)
 
 
 if __name__ == "__main__":
