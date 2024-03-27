@@ -246,9 +246,11 @@ def run_policy(ms: Minesweeper, policy: Policy) -> tuple[bool, float]:
 
 def policy_succeeds(ms: Minesweeper,
                     policy: Policy,
-                    num_runs: int = 30) -> tuple[bool, float]:
+                    num_runs: int = 100) -> tuple[bool, float]:
     assert num_runs > 0
 
+    # Use first run to determine if policy will deterministically reach
+    # the goal from the start state
     policy.reset_count()
 
     ms_copy: Minesweeper = ms.copy()
@@ -262,8 +264,6 @@ def policy_succeeds(ms: Minesweeper,
         return has_won, total_reward
 
     for _ in range(num_runs - 1):
-        policy.reset_count()
-
         ms_copy: Minesweeper = ms.copy()
         next_reward: float
         _, next_reward = run_policy(ms_copy, policy)
@@ -409,7 +409,7 @@ def main():
             ms.copy(),
             maximum_episode_count=1_000_000,
             discount_factor=0.95,
-            epsilon=0.001
+            epsilon=0.01
         )
 
     policy.reset_count()
