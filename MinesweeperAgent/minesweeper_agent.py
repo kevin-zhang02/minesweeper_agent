@@ -27,7 +27,19 @@ class AgentState:
         ) for i in range(10)
     )
 
-    def __init__(self, board: Minesweeper.Board | dict[str, int]):
+    @staticmethod
+    def states_from_hash(height: int,
+                         width: int,
+                         hash_str: str) -> tuple[tuple[int, ...], ...]:
+        leading_zeroes: int = height * width - len(hash_str)
+
+        state: str
+        return (
+            *(AgentState.cell_repr[0] for _ in range(leading_zeroes)),
+            *(AgentState.cell_repr[int(i)] for i in hash_str)
+        )
+
+    def __init__(self, board: Minesweeper.Board | tuple[int, int, str]):
         if isinstance(board, Minesweeper.Board):
             self.height: int = board.height
             self.width: int = board.width
@@ -40,25 +52,26 @@ class AgentState:
                 for minesweeper_state in board
             )
 
-            self._hash_val: int = AgentState._hash(board)
-        elif isinstance(board, dict):
+            self.hash_val: int = AgentState._hash(board)
+        elif isinstance(board, tuple):
             try:
-                self.height: int = board["height"]
-                self.width: int = board["width"]
+                self.height: int
+                self.width: int
 
-                hash_val_str: str = str(board["hash_val"])
-                leading_zeroes: int \
-                    = self.height * self.width - len(hash_val_str)
+                hash_str: str
+                self.height, self.width, hash_str = board
 
-                state: str
-                self.states: tuple[tuple[int, ...], ...] = (
-                    *(AgentState.cell_repr[0] for _ in range(leading_zeroes)),
-                    *(AgentState.cell_repr[int(i)] for i in hash_val_str)
+                self.states: tuple[tuple[int, ...], ...] \
+                    = AgentState.states_from_hash(
+                    self.height,
+                    self.width,
+                    hash_str
                 )
 
-                self._hash_val: int = board["hash_val"]
+                self.hash_val: int = int(hash_str)
             except KeyError:
-                print("Invalid board dict.")
+                print(f"Expected a tuple (height, width, hash_val), "
+                      f"got {board}")
         else:
             raise TypeError(f"Expected Board or dict, got {type(board)}")
 
@@ -95,45 +108,45 @@ class AgentState:
             raise TypeError(f"Expected int or tuple[int, int],"
                             f" got {type(index)}")
 
-    def as_dict(self) -> dict[str, int]:
-        return {
-            "height": self.height,
-            "width": self.width,
-            "hash_val": self._hash_val
-        }
-
     def __getitem__(self,
                     index: int | tuple[int, int]) -> tuple[int, ...]:
         return self.states[self._get_state_index(index)]
 
     def __hash__(self) -> int:
-        return self._hash_val
+        return self.hash_val
 
     def __eq__(self, other: object) -> bool:
         return (isinstance(other, AgentState)
-                and self._hash_val == other._hash_val)
+                and self.hash_val == other.hash_val)
 
     def __str__(self) -> str:
-        return str(self._hash_val)
+        return str(self.hash_val)
 
 
 class Policy(dict[AgentState, Action]):
     @staticmethod
     def from_file(file: TextIO) -> "Policy":
-        json_obj: list[list[dict[str, int] | Action]] = json.load(file)
+        json_obj: dict[str, dict[str, Action] | int] = json.load(file)
 
-        policy: Policy = Policy()
+        height: int = json_obj["height"]
+        width: int = json_obj["width"]
 
-        board_action_pair: list[dict[str, int] | Action]
-        for board_action_pair in json_obj:
-            state: AgentState = AgentState(board_action_pair[0])
+        policy: Policy = Policy(height, width)
 
-            policy[state] = board_action_pair[1]
+        state_hash: str
+        action: Action
+        for state_hash, action in json_obj["policy"].items():
+            state: AgentState = AgentState((height, width, state_hash))
+
+            policy[state] = action
 
         return policy
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, height: int, width: int, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        self.height: int = height
+        self.width: int = width
 
         self.found_count: int = 0
         self.guess_count: int = 0
@@ -141,12 +154,16 @@ class Policy(dict[AgentState, Action]):
     def reset_count(self) -> None:
         self.found_count = self.guess_count = 0
 
-    def as_json(self) -> list[tuple[dict[str, int], Action]]:
+    def as_json(self) -> dict[str, dict[int, Action] | int]:
         state: AgentState
         action: Action
-        return [
-            (state.as_dict(), action) for state, action in self.items()
-        ]
+        return {
+            "height": self.height,
+            "width": self.width,
+            "policy": {
+                state.hash_val: action for state, action in self.items()
+            }
+        }
 
     def to_file(self, file: TextIO) -> None:
         json.dump(self.as_json(), file)
@@ -281,7 +298,7 @@ def off_policy_control(ms: Minesweeper,
     values: dict[tuple[AgentState, Action], float] = {}
     cumulative_weights: dict[tuple[AgentState, Action], float] = {}
 
-    policy: Policy = Policy()
+    policy: Policy = Policy(ms.height, ms.width)
 
     evaluation_interval: int = 4
     prev_avg_reward: float | None = None
