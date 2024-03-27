@@ -418,7 +418,7 @@ def main():
     total_reward: float
     has_won, total_reward = run_policy(ms, policy)
     print(f"You won! {total_reward=:.2f}" if has_won
-          else f"You lost!{total_reward=:.2f}")
+          else f"You lost! {total_reward=:.2f}")
 
     print(f"State found in policy {policy.found_count} time(s).")
     print(f"Random guess made {policy.guess_count} time(s).")
