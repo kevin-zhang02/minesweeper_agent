@@ -1,5 +1,6 @@
 import json
 import random
+from dataclasses import dataclass
 from typing import Sequence, TextIO
 
 from minesweeper import Minesweeper
@@ -184,11 +185,19 @@ class Policy(dict[AgentState, Action]):
         return action
 
 
+@dataclass(slots=True)
+class EpisodeStep:
+    state: AgentState
+    action: Action
+    next_reward: float
+    action_probability_reciprocal: float
+
+
 def generate_episode(ms: Minesweeper,
                      policy: dict[AgentState, Action],
                      epsilon: float
-                     ) -> list[tuple[AgentState, Action, float, float]]:
-    episode: list[tuple[AgentState, Action, float, float]] = []
+                     ) -> list[EpisodeStep]:
+    episode: list[EpisodeStep] = []
     unrevealed_cells: list[tuple[int, int]] = ms.get_unrevealed_cells()
 
     while True:
@@ -213,17 +222,22 @@ def generate_episode(ms: Minesweeper,
             action = random.choice(unrevealed_cells)
             action_probability_reciprocal = len(unrevealed_cells)
 
-        reward: float
-        updated_cells: set[tuple[int, int]] | None
-        reward, updated_cells = ms.reveal_cell(*action)
+        reveal_info: Minesweeper.RevealInfo = ms.reveal_cell(*action)
 
-        episode.append((state, action, reward, action_probability_reciprocal))
+        episode.append(
+            EpisodeStep(
+                state,
+                action,
+                reveal_info.reward,
+                action_probability_reciprocal
+            )
+        )
 
-        if updated_cells is None:
+        if reveal_info.cells_updated is None:
             break
 
         cell: tuple[int, int]
-        for cell in updated_cells:
+        for cell in reveal_info.cells_updated:
             unrevealed_cells.remove(cell)
 
     return episode
@@ -253,14 +267,12 @@ def run_policy(ms: Minesweeper, policy: Policy) -> tuple[bool, float]:
     while True:
         action: Action = policy[state]
 
-        new_reward: float
-        updated: set[tuple[int, int]]
-        new_reward, updated = ms.reveal_cell(*action)
+        reveal_info: Minesweeper.RevealInfo = ms.reveal_cell(*action)
 
-        total_reward += new_reward
+        total_reward += reveal_info.reward
 
-        if updated is None:
-            return ms.has_won(), total_reward
+        if reveal_info.cells_updated is None:
+            return ms.has_won, total_reward
 
         state = AgentState(ms.get_board())
 
@@ -332,23 +344,22 @@ def off_policy_control(ms: Minesweeper,
             prev_avg_reward = average_rewards
 
         # (AgentState, Action, Reward, 1 / b(Action | AgentState))
-        episode: list[tuple[AgentState, Action, float, float]] \
+        episode: list[EpisodeStep] \
             = generate_episode(ms.copy(), policy, epsilon)
 
         return_val: float = 0
         weight: float = 1
 
         index: int
-        state: AgentState
-        action: Action
-        next_reward: float
-        action_probability_reciprocal: float
+        episode_step: EpisodeStep
         for (index,
-             (state, action, next_reward, action_probability_reciprocal)) \
+             episode_step) \
                 in enumerate(reversed(episode)):
-            return_val = return_val * discount_factor + next_reward
+            return_val = (return_val * discount_factor
+                          + episode_step.next_reward)
 
-            state_action_pair: tuple[AgentState, Action] = state, action
+            state_action_pair: tuple[AgentState, Action] \
+                = episode_step.state, episode_step.action
 
             cumulative_weights[state_action_pair] \
                 = cumulative_weights.get(state_action_pair, 0) + weight
@@ -359,15 +370,17 @@ def off_policy_control(ms: Minesweeper,
                     * (return_val - values[state_action_pair])
             )
 
-            all_actions: list[Action] = state.get_unrevealed_cells()
-            best_action: Action = get_best_action(state, values, all_actions)
+            all_actions: list[Action] \
+                = episode_step.state.get_unrevealed_cells()
+            best_action: Action \
+                = get_best_action(episode_step.state, values, all_actions)
 
-            policy[state] = best_action
+            policy[episode_step.state] = best_action
 
-            if action != best_action:
+            if episode_step.action != best_action:
                 break
 
-            weight *= action_probability_reciprocal
+            weight *= episode_step.action_probability_reciprocal
 
     return policy
 

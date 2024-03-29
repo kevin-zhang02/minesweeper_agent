@@ -1,6 +1,7 @@
 import itertools
 import random
 from copy import deepcopy
+from dataclasses import dataclass
 from enum import Enum
 from typing import Iterator, Callable, Generator
 
@@ -20,11 +21,15 @@ class Minesweeper:
         UNREVEALED = 9
 
     class Board:
+        __slots__ = "height", "width", "num_bombs", "board"
+
         def __init__(self, height: int, width: int, num_bombs: int):
             self.height: int = height
             self.width: int = width
             self.num_bombs: int = num_bombs
-            assert 0 <= num_bombs <= self.height * self.width
+
+            # Can't be all bombs
+            assert 0 <= num_bombs < self.height * self.width
 
             self.board: list[Minesweeper.State] \
                 = [Minesweeper.State.UNREVEALED] * (self.height * self.width)
@@ -134,8 +139,8 @@ class Minesweeper:
             output_str: str = '\n'.join(
                 ''.join(
                     output_format.format(
-                        bomb_repr(row,
-                                  column) if value == Minesweeper.State.BOMB
+                        bomb_repr(row, column)
+                        if value == Minesweeper.State.BOMB
                         else unrevealed_repr(row, column)
                         if value == Minesweeper.State.UNREVEALED
                         else other_repr(row, column, value)
@@ -165,15 +170,29 @@ class Minesweeper:
             cls = self.__class__
             result: Minesweeper.Board = cls.__new__(cls)
             memo[id(self)] = result
-            for k, v in self.__dict__.items():
+            for k in Minesweeper.Board.__slots__:
+                v = getattr(self, k)
                 setattr(result, k, deepcopy(v, memo))
             return result
+
+    @dataclass(slots=True)
+    class RevealInfo:
+        reward: float
+        cells_updated: set[tuple[int, int]] | None
 
     default_difficulties: dict[str, tuple[int, int, int]] = {
         "easy": (9, 9, 10),
         "normal": (16, 16, 40),
         "hard": (16, 30, 99)
     }
+
+    __slots__ = (
+        "_board",
+        "progress_reward",
+        "random_penalty",
+        "first_reveal",
+        "_game_state"
+    )
 
     def __init__(self,
                  height: int,
@@ -205,6 +224,23 @@ class Minesweeper:
     @property
     def cell_count(self) -> int:
         return self.height * self.width
+
+    @property
+    def _is_winner(self) -> bool:
+        num_unrevealed: int = self._board.count(Minesweeper.State.UNREVEALED)
+        return num_unrevealed == 0
+
+    @property
+    def is_running(self) -> bool:
+        return not self._game_state
+
+    @property
+    def has_lost(self) -> bool:
+        return self._game_state == -1
+
+    @property
+    def has_won(self) -> bool:
+        return self._game_state == 1
 
     def cell_to_rc(self, cell: int) -> tuple[int, int]:
         """
@@ -255,10 +291,6 @@ class Minesweeper:
 
         return surrounding_bombs
 
-    def _is_winner(self) -> bool:
-        num_unrevealed: int = self._board.count(Minesweeper.State.UNREVEALED)
-        return num_unrevealed == 0
-
     def _get_reward(self, row: int, col: int) -> float:
         r: int
         c: int
@@ -284,10 +316,7 @@ class Minesweeper:
     def reveal_cell(self,
                     row: int,
                     col: int
-                    ) -> tuple[
-        float,
-        set[tuple[int, int]] | None
-    ]:
+                    ) -> RevealInfo:
         if self.first_reveal:
             self.first_reveal = False
 
@@ -296,56 +325,53 @@ class Minesweeper:
 
         if self._is_bomb(row, col):
             self._game_state = -1
-            return -1, None
+            return Minesweeper.RevealInfo(-1, None)
         elif self._board[row, col] != Minesweeper.State.UNREVEALED:
-            return 0, set()
+            return Minesweeper.RevealInfo(0, set())
         else:
             reward: float = self._get_reward(row, col)
 
             self._board[row, col] \
                 = Minesweeper.State(self._count_surrounding_bombs(row, col))
-            updated: set[tuple[int, int]] \
-                = {(row, col)}
+            reveal_info: Minesweeper.RevealInfo \
+                = Minesweeper.RevealInfo(reward, {(row, col)})
 
-            if self._is_winner():
+            if self._is_winner:
                 self._game_state = 1
-                return 1, None
+                return Minesweeper.RevealInfo(1, None)
             elif self._board[row, col] != Minesweeper.State.ZERO:
-                return reward, updated
+                return reveal_info
 
             r: int
             for r in range(row - 1, row + 2):
                 c: int
                 for c in range(col - 1, col + 2):
                     if self._board.is_cell_inbounds_rc(r, c):
-                        other_reward: float
-                        rc_updated: set[tuple[int, int]]
-                        other_reward, rc_updated = self.reveal_cell(r, c)
+                        sub_update: Minesweeper.RevealInfo \
+                            = self.reveal_cell(r, c)
 
-                        if rc_updated is None:
-                            return other_reward, None
+                        if sub_update.cells_updated is None:
+                            return sub_update
                         else:
-                            updated.update(rc_updated)
+                            reveal_info.cells_updated.update(
+                                sub_update.cells_updated
+                            )
 
-            return reward, updated
+            return reveal_info
 
     def get_board(self) -> "Minesweeper.Board":
         return self._board.copy()
 
-    def is_running(self) -> bool:
-        return not self._game_state
-
-    def has_lost(self) -> bool:
-        return self._game_state == -1
-
-    def has_won(self) -> bool:
-        return self._game_state == 1
-
     def copy(self) -> "Minesweeper":
         cls = self.__class__
-        result = cls.__new__(cls)
-        result.__dict__.update(self.__dict__)
+        result: Minesweeper = cls.__new__(cls)
 
+        # Shallow copy
+        var_name: str
+        for var_name in cls.__slots__:
+            setattr(result, var_name, getattr(self, var_name))
+
+        # Deep copy the board
         result._board = result._board.copy(False)
 
         return result
@@ -375,7 +401,7 @@ if __name__ == '__main__':
         print(ms)
 
         if update is None:
-            if ms.has_lost():
+            if ms.has_lost:
                 print("You lost!")
             else:
                 print("You won!")
