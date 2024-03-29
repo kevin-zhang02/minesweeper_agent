@@ -79,15 +79,12 @@ class AgentState:
             raise TypeError(f"Expected Board or dict, got {type(board)}")
 
     def get_actions(self) -> list[Action]:
-        actions: list[Action] = []
-
         index: int
         cell: tuple[int, ...]
-        for index, cell in enumerate(self.states):
-            if cell[9] == 1:
-                actions.append(divmod(index, self.width))
-
-        return actions
+        return [
+            divmod(index, self.width)
+            for index, cell in enumerate(self.states) if cell[9] == 1
+        ]
 
     def get_unrevealed_cells(self) -> list[tuple[int, int]]:
         row: int
