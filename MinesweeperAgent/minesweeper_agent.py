@@ -39,6 +39,8 @@ class AgentState:
             *(AgentState.cell_repr[int(i)] for i in hash_str)
         )
 
+    __slots__ = "height", "width", "states", "hash_val"
+
     def __init__(self, board: Minesweeper.Board | tuple[int, int, str]):
         if isinstance(board, Minesweeper.Board):
             self.height: int = board.height
@@ -141,6 +143,8 @@ class Policy(dict[AgentState, Action]):
             policy[state] = action
 
         return policy
+
+    __slots__ = "height", "width", "found_count", "guess_count"
 
     def __init__(self, height: int, width: int, *args, **kwargs):
         super().__init__(*args, **kwargs)
