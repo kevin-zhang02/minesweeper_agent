@@ -1,5 +1,6 @@
 import json
 import random
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Sequence, TextIO
 
@@ -43,6 +44,10 @@ class AgentState:
     __slots__ = "height", "width", "states", "hash_val"
 
     def __init__(self, board: Minesweeper.Board | tuple[int, int, str]):
+        """
+        Initializes using a Minesweeper board or a tuple.
+        :param board: a Minesweeper board or a (height, width, hash) tuple.
+        """
         if isinstance(board, Minesweeper.Board):
             self.height: int = board.height
             self.width: int = board.width
@@ -191,7 +196,7 @@ class EpisodeStep:
 
 
 def generate_episode(ms: Minesweeper,
-                     policy: dict[AgentState, Action],
+                     policy: Mapping[AgentState, Action],
                      epsilon: float
                      ) -> list[EpisodeStep]:
     episode: list[EpisodeStep] = []
@@ -241,7 +246,7 @@ def generate_episode(ms: Minesweeper,
 
 
 def get_best_action(state: AgentState,
-                    values: dict[tuple[AgentState, Action], float],
+                    values: Mapping[tuple[AgentState, Action], float],
                     actions: Sequence[Action]) -> Action:
     best_action: Action = actions[0]
     best_action_value: float = values.get((state, best_action), 0)
