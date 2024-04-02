@@ -427,7 +427,8 @@ class Minesweeper:
 # Main execution block, used for running the game in a command-line interface.
 if __name__ == '__main__':
     random.seed(2)  # Set a fixed seed for reproducibility.
-    ms: Minesweeper = Minesweeper(16, 16, 40)  # Create a Minesweeper game instance.
+    # Create a Minesweeper game instance.
+    ms: Minesweeper = Minesweeper(*Minesweeper.default_difficulties["Medium"])
 
     print(ms)  # Print the initial board state.
 
