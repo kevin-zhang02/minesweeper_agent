@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Iterator, Callable, Generator
 
+
 # Define the Minesweeper game class.
 class Minesweeper:
     # Enumeration for the state of each cell within the Minesweeper game.
@@ -345,6 +346,7 @@ class Minesweeper:
             if self._board[row, col] == Minesweeper.State.UNREVEALED
             or self._board[row, col] == Minesweeper.State.BOMB
         ]
+
     # The main method for revealing a cell and updating the game state.
     def reveal_cell(self,
                     row: int,
@@ -377,21 +379,19 @@ class Minesweeper:
             elif self._board[row, col] != Minesweeper.State.ZERO:
                 return reveal_info
 
-            r: int
             # If a zero cell is revealed, recursively reveal surrounding cells.
-            for r in range(row - 1, row + 2):
-                c: int
-                for c in range(col - 1, col + 2):
-                    if self._board.is_cell_inbounds_rc(r, c):
-                        sub_update: Minesweeper.RevealInfo \
-                            = self.reveal_cell(r, c)
+            r: int
+            c: int
+            for r, c in self._board.surrounding_cells(row, col):
+                sub_update: Minesweeper.RevealInfo \
+                    = self.reveal_cell(r, c)
 
-                        if sub_update.cells_updated is None:
-                            return sub_update
-                        else:
-                            reveal_info.cells_updated.update(
-                                sub_update.cells_updated
-                            )
+                if sub_update.cells_updated is None:
+                    return sub_update
+                else:
+                    reveal_info.cells_updated.update(
+                        sub_update.cells_updated
+                    )
 
             return reveal_info
 
@@ -445,4 +445,4 @@ if __name__ == '__main__':
             else:
                 print("You won!")
 
-            terminated = True  # End the game loop.
+            terminated = True  # End the game loop
