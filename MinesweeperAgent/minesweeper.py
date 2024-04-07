@@ -8,7 +8,9 @@ from typing import Iterator, Callable, Generator
 
 # Define the Minesweeper game class.
 class Minesweeper:
-    # Enumeration for the state of each cell within the Minesweeper game.
+    """
+    Enumeration for the state of each cell within the Minesweeper game.
+    """
     class State(Enum):
         BOMB = -1  # Represents a bomb.
         ZERO = 0   # Represents a cell with 0 surrounding bombs.
@@ -23,8 +25,10 @@ class Minesweeper:
         EIGHT = 8
         UNREVEALED = 9  # Represents a cell that has not been revealed yet.
 
-    # Nested Board class handles the game board creation and manipulation.
     class Board:
+        """
+        Nested Board class handles the game board creation and manipulation.
+        """
         __slots__ = "height", "width", "num_bombs", "board"
 
         def __init__(self, height: int, width: int, num_bombs: int):
@@ -196,8 +200,10 @@ class Minesweeper:
             return result
 
     @dataclass(slots=True)
-    # The RevealInfo data class holds information about the result of a cell reveal.
     class RevealInfo:
+        """
+        The RevealInfo data class holds information about the result of a cell reveal.
+        """
         reward: float  # The reward received from revealing this cell.
         cells_updated: set[tuple[int, int]] | None  # The set of cells updated as a result of the reveal.
 
@@ -223,8 +229,10 @@ class Minesweeper:
                  num_bombs: int,
                  progress_reward: float = 0.3,
                  random_penalty: float = -0.3):
-        # Initialize a Minesweeper game with a board of given dimensions and bombs.
-        # Also sets up the reward structure for the agent's actions.
+        """ 
+        Initialize a Minesweeper game with a board of given dimensions and bombs.
+        Also sets up the reward structure for the agent's actions.
+        """
         self._board: Minesweeper.Board \
             = Minesweeper.Board(height, width, num_bombs)
 
@@ -233,9 +241,11 @@ class Minesweeper:
 
         self.first_reveal: bool = True
 
-        # 0: running
-        # -1: lost
-        # 1: win
+        """
+        0: running
+        -1: lost
+        1: win
+        """
         self._game_state: int = 0
 
     # Various property methods are defined below to provide a safe way to access board attributes.

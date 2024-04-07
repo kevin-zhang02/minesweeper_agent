@@ -6,13 +6,20 @@ from typing import Sequence, TextIO
 
 from minesweeper import Minesweeper
 
-
+# An action in Minesweeper is defined as a tuple of two integers, representing row and column respectively.
 Action = tuple[int, int]
 
 
 class AgentState:
+    """
+    Represents the state of the Minesweeper game from the agent's perspective.
+    The state is encoded as a one-hot vector for each cell on the board.
+    """
     @staticmethod
     def _hash(board: Minesweeper.Board) -> int:
+        """
+        Compute a unique hash for a given board state.
+        """
         hash_val: int = 0
 
         minesweeper_state: Minesweeper.State
@@ -22,6 +29,7 @@ class AgentState:
 
         return hash_val
 
+    # Precompute the one-hot representations for the cell states.
     cell_repr: tuple[tuple[int, ...], ...] = tuple(
         tuple(
             int(i == j)
@@ -35,6 +43,9 @@ class AgentState:
                          hash_str: str) -> tuple[tuple[int, ...], ...]:
         leading_zeroes: int = height * width - len(hash_str)
 
+        """
+        Reconstructs the state representation from a hash string.
+        """
         state: str
         return (
             *(AgentState.cell_repr[0] for _ in range(leading_zeroes)),
@@ -84,6 +95,9 @@ class AgentState:
             raise TypeError(f"Expected Board or dict, got {type(board)}")
 
     def get_actions(self) -> list[Action]:
+        """
+        Retrieves a list of all possible actions (cell reveals) for the current state.
+        """
         index: int
         cell: tuple[int, ...]
         return [
@@ -92,6 +106,9 @@ class AgentState:
         ]
 
     def get_unrevealed_cells(self) -> list[tuple[int, int]]:
+        """
+        Retrieves a list of all unrevealed cells in the current state.
+        """
         row: int
         col: int
         return [
@@ -102,6 +119,9 @@ class AgentState:
         ]
 
     def _get_state_index(self, index: int | tuple[int, int]) -> int:
+        """
+        Converts a tuple index to a single index.
+        """
         if isinstance(index, int):
             return index
         elif isinstance(index, tuple) and len(index) == 2:
@@ -129,8 +149,14 @@ class AgentState:
 
 
 class Policy(dict[AgentState, Action]):
+    """
+    Represents a policy for the Minesweeper game.
+    """
     @staticmethod
     def from_file(file: TextIO) -> "Policy":
+        """
+        Loads a policy from a file.
+        """
         json_obj: dict[str, dict[str, Action] | int] = json.load(file)
 
         height: int = json_obj["height"]
@@ -150,6 +176,9 @@ class Policy(dict[AgentState, Action]):
     __slots__ = "height", "width", "found_count", "guess_count"
 
     def __init__(self, height: int, width: int, *args, **kwargs):
+        """
+        Initializes the policy with a given height and width.
+        """
         super().__init__(*args, **kwargs)
 
         self.height: int = height
@@ -159,9 +188,15 @@ class Policy(dict[AgentState, Action]):
         self.guess_count: int = 0
 
     def reset_count(self) -> None:
+        """
+        Resets the count of found and guessed states.
+        """
         self.found_count = self.guess_count = 0
 
     def as_json(self) -> dict[str, dict[int, Action] | int]:
+        """
+        Converts the policy to a JSON-serializable format.
+        """
         state: AgentState
         action: Action
         return {
@@ -173,9 +208,15 @@ class Policy(dict[AgentState, Action]):
         }
 
     def to_file(self, file: TextIO) -> None:
+        """
+        Writes the policy to a file.
+        """
         json.dump(self.as_json(), file)
 
     def __getitem__(self, state: AgentState) -> Action:
+        """
+        Retrieves the action for a given state.
+        """
         action: Action | None = super().get(state, None)
 
         if action is None:
@@ -189,6 +230,9 @@ class Policy(dict[AgentState, Action]):
 
 @dataclass(slots=True)
 class EpisodeStep:
+    """
+    Represents a step in an episode of the Minesweeper game.
+    """
     state: AgentState
     action: Action
     next_reward: float
@@ -199,6 +243,9 @@ def generate_episode(ms: Minesweeper,
                      policy: Mapping[AgentState, Action],
                      epsilon: float
                      ) -> list[EpisodeStep]:
+    """
+    Generates an episode of the Minesweeper game using the given policy.
+    """
     episode: list[EpisodeStep] = []
     unrevealed_cells: list[tuple[int, int]] = ms.get_unrevealed_cells()
 
@@ -248,6 +295,9 @@ def generate_episode(ms: Minesweeper,
 def get_best_action(state: AgentState,
                     values: Mapping[tuple[AgentState, Action], float],
                     actions: Sequence[Action]) -> Action:
+    """
+    Retrieves the best action for a given state.
+    """
     best_action: Action = actions[0]
     best_action_value: float = values.get((state, best_action), 0)
 
@@ -263,6 +313,9 @@ def get_best_action(state: AgentState,
 
 
 def run_policy(ms: Minesweeper, policy: Policy) -> tuple[bool, float]:
+    """
+    Runs the Minesweeper game using the given policy.
+    """
     state: AgentState = AgentState(ms.get_board())
     total_reward: float = 0
 
@@ -282,6 +335,9 @@ def run_policy(ms: Minesweeper, policy: Policy) -> tuple[bool, float]:
 def policy_succeeds(ms: Minesweeper,
                     policy: Policy,
                     num_runs: int = 100) -> tuple[bool, float]:
+    """
+    Determines if the policy succeeds in the Minesweeper game.
+    """
     assert num_runs > 0
 
     # Use first run to determine if policy will deterministically reach
@@ -312,6 +368,9 @@ def off_policy_control(ms: Minesweeper,
                        maximum_episode_count: int,
                        discount_factor: float,
                        epsilon: float) -> Policy:
+    """
+    Off-policy control algorithm for the Minesweeper game.
+    """
     # Initialize
     values: dict[tuple[AgentState, Action], float] = {}
     cumulative_weights: dict[tuple[AgentState, Action], float] = {}
@@ -388,6 +447,11 @@ def off_policy_control(ms: Minesweeper,
 
 
 def main():
+    """
+    Main function for the Minesweeper agent.
+    This function allows the user to play a game of Minesweeper using a policy
+    generated by the off-policy control algorithm.
+    """
     response: str | None = None
     while response is None:
         try:
