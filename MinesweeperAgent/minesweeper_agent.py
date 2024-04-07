@@ -6,7 +6,8 @@ from typing import Sequence, TextIO
 
 from minesweeper import Minesweeper
 
-# An action in Minesweeper is defined as a tuple of two integers, representing row and column respectively.
+# An action in Minesweeper is defined as a tuple of two integers,
+# representing row and column respectively.
 Action = tuple[int, int]
 
 
@@ -96,7 +97,8 @@ class AgentState:
 
     def get_actions(self) -> list[Action]:
         """
-        Retrieves a list of all possible actions (cell reveals) for the current state.
+        Retrieves a list of all possible actions (cell reveals) for the current
+            state.
         """
         index: int
         cell: tuple[int, ...]

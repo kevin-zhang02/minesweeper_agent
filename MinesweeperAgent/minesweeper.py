@@ -8,10 +8,11 @@ from typing import Iterator, Callable, Generator
 
 # Define the Minesweeper game class.
 class Minesweeper:
-    """
-    Enumeration for the state of each cell within the Minesweeper game.
-    """
+
     class State(Enum):
+        """
+        Enumeration for the state of each cell within the Minesweeper game.
+        """
         BOMB = -1  # Represents a bomb.
         ZERO = 0   # Represents a cell with 0 surrounding bombs.
         # Represent cells with 1-8 surrounding bombs respectively.
@@ -70,7 +71,6 @@ class Minesweeper:
                         return
 
         def cell_to_rc(self, cell: int) -> tuple[int, int]:
-            # Converts a cell index to its row and column numbers.
             """
             :param cell: the state to convert into a (row, column) tuple.
             :return: a tuple containing the row and column of the state.
@@ -78,7 +78,6 @@ class Minesweeper:
             return cell // self.width, cell % self.width
 
         def cell_from_rc(self, r: int, c: int) -> int:
-            # Converts row and column numbers to a cell index.
             """
             :param r: the row of the state.
             :param c: the column of the state.
@@ -91,7 +90,8 @@ class Minesweeper:
             return 0 <= cell < self.cell_count
 
         def is_cell_inbounds_rc(self, r: int, c: int) -> bool:
-            # Check if the row and column numbers are within the board boundaries.
+            # Check if the row and column numbers are within the board
+            #   boundaries.
             return 0 <= r < self.height and 0 <= c < self.width
 
         def count(self, state: "Minesweeper.State") -> int:
@@ -122,7 +122,6 @@ class Minesweeper:
                 for c in range(max(0, col - 1), min(col + 2, self.width)):
                     yield r, c
 
-        # The __getitem__ and __setitem__ methods allow for direct access to the board's cells.
         def __getitem__(self,
                         index: int | tuple[int, int]) -> "Minesweeper.State":
             return self.board[self._get_board_index(index)]
@@ -202,10 +201,13 @@ class Minesweeper:
     @dataclass(slots=True)
     class RevealInfo:
         """
-        The RevealInfo data class holds information about the result of a cell reveal.
+        The RevealInfo data class holds information about the result of a cell
+        reveal.
         """
-        reward: float  # The reward received from revealing this cell.
-        cells_updated: set[tuple[int, int]] | None  # The set of cells updated as a result of the reveal.
+        # The reward received from revealing this cell
+        reward: float
+        # The set of cells updated as a result of the reveal.
+        cells_updated: set[tuple[int, int]] | None
 
     # Default difficulties preset configurations for the Minesweeper board.
     default_difficulties: dict[str, tuple[int, int, int]] = {
@@ -230,7 +232,8 @@ class Minesweeper:
                  progress_reward: float = 0.3,
                  random_penalty: float = -0.3):
         """ 
-        Initialize a Minesweeper game with a board of given dimensions and bombs.
+        Initialize a Minesweeper game with a board of given dimensions and
+            bombs.
         Also sets up the reward structure for the agent's actions.
         """
         self._board: Minesweeper.Board \
@@ -248,7 +251,8 @@ class Minesweeper:
         """
         self._game_state: int = 0
 
-    # Various property methods are defined below to provide a safe way to access board attributes.
+    # Various property methods are defined below to provide a safe way to
+    #   access board attributes.
     @property
     def height(self) -> int:
         return self._board.height
@@ -295,7 +299,8 @@ class Minesweeper:
         """
         return self._board.cell_from_rc(r, c)
 
-    # Two methods to check if the given cell or coordinates are within the board boundaries.
+    # Two methods to check if the given cell or coordinates are within the
+    #   board boundaries.
     def is_cell_inbounds(self, cell: int) -> bool:
         return 0 <= cell < self.cell_count
 
@@ -362,7 +367,8 @@ class Minesweeper:
                     row: int,
                     col: int
                     ) -> RevealInfo:
-        if self.first_reveal:  # Ensures the first revealed cell is never a bomb.
+        # Ensures the first revealed cell is never a bomb
+        if self.first_reveal:
             self.first_reveal = False
 
             if self._board[row, col] == Minesweeper.State.BOMB:
@@ -405,11 +411,13 @@ class Minesweeper:
 
             return reveal_info
 
-    # Return a copy of the board object, used to safely access the board without modifying the original.
+    # Return a copy of the board object, used to safely access the board
+    #   without modifying the original.
     def get_board(self) -> "Minesweeper.Board":
         return self._board.copy()
 
-    # Provides a deep copy of the game, used for simulations or AI agents to practice without affecting the actual game.
+    # Provides a deep copy of the game, used for simulations or AI agents to
+    #   practice without affecting the actual game.
     def copy(self) -> "Minesweeper":
         cls = self.__class__
         result: Minesweeper = cls.__new__(cls)
@@ -445,8 +453,9 @@ if __name__ == '__main__':
     terminated: bool = False  # A flag to check if the game has ended.
     while not terminated:  # Continue until the game ends.
         move = (int(s) for s in input("Enter a cell to reveal: ").split())
-        update: dict[tuple[int, int], Minesweeper.State] | None 
-        _, update = ms.reveal_cell(*move)  # Perform the move and reveal the cell.
+        update: dict[tuple[int, int], Minesweeper.State] | None
+        # Perform the move and reveal the cell.
+        _, update = ms.reveal_cell(*move)
 
         print(ms)  # Print the updated board state.
 
