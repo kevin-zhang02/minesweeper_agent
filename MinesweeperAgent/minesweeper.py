@@ -198,7 +198,7 @@ class Minesweeper:
                 setattr(result, k, deepcopy(v, memo))
             return result
 
-    @dataclass(slots=True)
+    @dataclass(frozen=True, slots=True)
     class RevealInfo:
         """
         The RevealInfo data class holds information about the result of a cell

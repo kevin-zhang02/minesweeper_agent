@@ -5,6 +5,11 @@ from dataclasses import dataclass
 from typing import Sequence, TextIO
 
 from minesweeper import Minesweeper
+from minesweeper_plots import plot_stats
+
+import numpy as np
+import numpy.typing as npt
+
 
 # An action in Minesweeper is defined as a tuple of two integers,
 # representing row and column respectively.
@@ -230,7 +235,7 @@ class Policy(dict[AgentState, Action]):
         return action
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class EpisodeStep:
     """
     Represents a step in an episode of the Minesweeper game.
@@ -314,14 +319,24 @@ def get_best_action(state: AgentState,
     return best_action
 
 
-def run_policy(ms: Minesweeper, policy: Policy) -> tuple[bool, float]:
+@dataclass(frozen=True, slots=True)
+class PolicyRunData:
+    has_won: bool
+    rewards: float
+    num_time_steps: int
+
+
+def run_policy(ms: Minesweeper, policy: Policy) -> PolicyRunData:
     """
-    Runs the Minesweeper game using the given policy.
+    Runs the Minesweeper game using the given policy. Does not copy the env.
     """
     state: AgentState = AgentState(ms.get_board())
     total_reward: float = 0
+    time_steps: int = 0
 
     while True:
+        time_steps += 1
+
         action: Action = policy[state]
 
         reveal_info: Minesweeper.RevealInfo = ms.reveal_cell(*action)
@@ -329,16 +344,19 @@ def run_policy(ms: Minesweeper, policy: Policy) -> tuple[bool, float]:
         total_reward += reveal_info.reward
 
         if reveal_info.cells_updated is None:
-            return ms.has_won, total_reward
+            return PolicyRunData(ms.has_won, total_reward, time_steps)
 
         state = AgentState(ms.get_board())
 
 
 def policy_succeeds(ms: Minesweeper,
                     policy: Policy,
-                    num_runs: int = 100) -> tuple[bool, float]:
+                    num_runs: int = 5) -> PolicyRunData:
     """
     Determines if the policy succeeds in the Minesweeper game.
+
+    Return data represents if the policy is both deterministic and wins,
+    the average reward per run, and the average number of steps per episode.
     """
     assert num_runs > 0
 
@@ -348,30 +366,49 @@ def policy_succeeds(ms: Minesweeper,
 
     ms_copy: Minesweeper = ms.copy()
 
-    has_won: bool
-    total_reward: float
-    has_won, total_reward = run_policy(ms_copy, policy)
+    policy_run_data: PolicyRunData = run_policy(ms_copy, policy)
 
     # Policy fully deterministic when following policy at start state
     if not policy.guess_count:
-        return has_won, total_reward
+        return policy_run_data
+
+    total_reward: float = policy_run_data.rewards
+    total_time_steps: int = policy_run_data.num_time_steps
 
     for _ in range(num_runs - 1):
-        ms_copy: Minesweeper = ms.copy()
-        next_reward: float
-        _, next_reward = run_policy(ms_copy, policy)
+        next_policy_run_data: PolicyRunData = run_policy(ms_copy, policy)
 
-        total_reward += next_reward
+        total_reward += next_policy_run_data.rewards
+        total_time_steps += next_policy_run_data.num_time_steps
 
-    return False, total_reward / num_runs
+    return PolicyRunData(
+        False,
+        total_reward / num_runs,
+        round(total_time_steps / num_runs)
+    )
+
+
+@dataclass(slots=True)
+class Stats:
+    episode_lengths: npt.NDArray[np.int32]
+    episode_rewards: npt.NDArray[np.float64]
 
 
 def off_policy_control(ms: Minesweeper,
                        maximum_episode_count: int,
                        discount_factor: float,
-                       epsilon: float) -> Policy:
+                       epsilon: float
+                       ) -> tuple[Policy, list[int], list[float]]:
     """
     Off-policy control algorithm for the Minesweeper game.
+
+
+    :param ms: Minesweeper environment.
+    :param maximum_episode_count: the maximum number of episodes to run.
+    :param discount_factor: the discount factor.
+    :param epsilon: the chance to take a random action.
+    :return: a tuple containing the policy, the episode lengths, and the
+        episode rewards.
     """
     # Initialize
     values: dict[tuple[AgentState, Action], float] = {}
@@ -384,27 +421,33 @@ def off_policy_control(ms: Minesweeper,
     stop_delta_threshold: float \
         = min(abs(ms.progress_reward), abs(ms.random_penalty))
 
+    episode_lengths: list[int] = []
+    episode_rewards: list[float] = []
+
     epoch: int
     for epoch in range(1, maximum_episode_count + 1):
+        policy_run_data: PolicyRunData = run_policy(ms.copy(), policy)
+        episode_lengths.append(policy_run_data.num_time_steps)
+        episode_rewards.append(policy_run_data.rewards)
+
         if not epoch % evaluation_interval:
             print(f"Epoch {epoch}")
 
-            has_won: bool
-            average_rewards: float
-            has_won, average_rewards = policy_succeeds(ms, policy)
+            policy_run_data: PolicyRunData = policy_succeeds(ms, policy)
 
             if prev_avg_reward is not None:
-                print(f"{prev_avg_reward=:.2f}", f"{average_rewards=:.2f}")
+                print(f"{prev_avg_reward=:.2f}",
+                      f"{policy_run_data.rewards=:.2f}")
 
             if (prev_avg_reward is not None
-                    and has_won
-                    and abs(average_rewards - prev_avg_reward)
+                    and policy_run_data.has_won
+                    and abs(policy_run_data.rewards - prev_avg_reward)
                         < stop_delta_threshold):
-                return policy
+                return policy, episode_lengths, episode_rewards
             else:
                 evaluation_interval = min(1024, evaluation_interval * 2)
 
-            prev_avg_reward = average_rewards
+            prev_avg_reward = policy_run_data.rewards
 
         # (AgentState, Action, Reward, 1 / b(Action | AgentState))
         episode: list[EpisodeStep] \
@@ -415,9 +458,7 @@ def off_policy_control(ms: Minesweeper,
 
         index: int
         episode_step: EpisodeStep
-        for (index,
-             episode_step) \
-                in enumerate(reversed(episode)):
+        for index, episode_step in enumerate(reversed(episode)):
             return_val = (return_val * discount_factor
                           + episode_step.next_reward)
 
@@ -445,7 +486,7 @@ def off_policy_control(ms: Minesweeper,
 
             weight *= episode_step.action_probability_reciprocal
 
-    return policy
+    return policy, episode_lengths, episode_rewards
 
 
 def main():
@@ -507,20 +548,27 @@ def main():
                 print("File cannot be found.")
                 filename = None
     else:
-        policy = off_policy_control(
+        episode_lengths: list[int]
+        episode_rewards: list[float]
+        policy, episode_lengths, episode_rewards = off_policy_control(
             ms.copy(),
             maximum_episode_count=1_000_000,
             discount_factor=0.95,
             epsilon=0.01
         )
 
+        plot_stats(
+            "Training Stats",
+            "Episode Rewards",
+            Stats(np.array(episode_lengths), np.array(episode_rewards))
+        )
+
     policy.reset_count()
 
-    has_won: bool
-    total_reward: float
-    has_won, total_reward = run_policy(ms, policy)
-    print(f"You won! {total_reward=:.2f}" if has_won
-          else f"You lost! {total_reward=:.2f}")
+    policy_run_data: PolicyRunData = run_policy(ms, policy)
+    print(f"You won! reward={policy_run_data.rewards:.2f}"
+          if policy_run_data.has_won
+          else f"You lost! reward={policy_run_data.rewards:.2f}")
 
     print(f"State found in policy {policy.found_count} time(s).")
     print(f"Random guess made {policy.guess_count} time(s).")
