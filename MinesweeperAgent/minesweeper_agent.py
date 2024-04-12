@@ -558,7 +558,7 @@ def main():
         )
 
         plot_stats(
-            "Training Stats",
+            f"Training Stats - {difficulty}",
             "Episode Rewards",
             Stats(np.array(episode_lengths), np.array(episode_rewards))
         )
