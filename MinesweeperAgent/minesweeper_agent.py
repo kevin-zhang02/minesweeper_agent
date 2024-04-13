@@ -520,9 +520,9 @@ def main():
     # print(ms)
 
     policy: Policy
+    policy_epsilon: float | None = None
 
     load_policy: bool | None = None
-
     while load_policy is None:
         response: str \
             = (input("Do you want to load a policy from file (y/n): ")
@@ -548,20 +548,31 @@ def main():
                 print("File cannot be found.")
                 filename = None
     else:
-        episode_lengths: list[int]
-        episode_rewards: list[float]
-        policy, episode_lengths, episode_rewards = off_policy_control(
-            ms.copy(),
-            maximum_episode_count=1_000_000,
-            discount_factor=0.95,
-            epsilon=0.01
-        )
+        policy_reward: float = float("-inf")
+        policy_epsilon: float = float("-inf")
 
-        plot_stats(
-            f"Training Stats - {difficulty}",
-            "Episode Rewards",
-            Stats(np.array(episode_lengths), np.array(episode_rewards))
-        )
+        epsilon: float
+        for epsilon in (0.005, 0.01, 0.02):
+            test_policy: Policy
+            episode_lengths: list[int]
+            episode_rewards: list[float]
+            test_policy, episode_lengths, episode_rewards = off_policy_control(
+                ms.copy(),
+                maximum_episode_count=1_000_000,
+                discount_factor=0.95,
+                epsilon=epsilon
+            )
+
+            if episode_rewards[-1] > policy_reward:
+                policy = test_policy
+                policy_reward = episode_rewards[-1]
+                policy_epsilon = epsilon
+
+            plot_stats(
+                f"Training Stats - {difficulty} - {epsilon=}",
+                "Episode Rewards",
+                Stats(np.array(episode_lengths), np.array(episode_rewards))
+            )
 
     policy.reset_count()
 
@@ -569,6 +580,9 @@ def main():
     print(f"You won! reward={policy_run_data.rewards:.2f}"
           if policy_run_data.has_won
           else f"You lost! reward={policy_run_data.rewards:.2f}")
+
+    if policy_epsilon is not None:
+        print(f"Policy found using epsilon={policy_epsilon}")
 
     print(f"State found in policy {policy.found_count} time(s).")
     print(f"Random guess made {policy.guess_count} time(s).")
